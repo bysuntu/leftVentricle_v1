@@ -12,6 +12,141 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 
+def shortAxis(points,center,degree,numPTS,sID,eID,axisDir):
+
+    pp=[]
+    for i in range(0, len(points)):
+        pp.append([])
+        for k in range (0,3):
+            pp[i].append(points[i][k])
+    
+    for i in range(0,len(pp)):
+        for k in range(0,3):
+            pp[i][k]=pp[i][k]-center[k]
+    z=[]
+    for i in range(0,len(pp)):
+        z.append(np.dot(pp[i],axisDir))
+    
+    r=[]
+    planarPts=[]
+    for i in range(0,len(pp)):
+        planarPts.append([])
+        for k in range(0,3):
+            planarPts[i].append(pp[i][k]-z[i]*axisDir[k])
+        r.append(np.linalg.norm(planarPts[i]))
+    
+    #Normal direction
+    normalDir=np.cross(planarPts[0],planarPts[1])/np.linalg.norm(np.cross(planarPts[0],planarPts[1]))
+
+    angle=[]
+    anglePts=planarPts
+    anglePts.append(planarPts[0])
+    for i in range(0,len(pp)):
+        if i==0:
+            angle.append(0)
+        else:
+            angle.append(angle[i-1]+np.arccos(np.dot(anglePts[i-1],anglePts[i])/(np.linalg.norm(anglePts[i-1])*np.linalg.norm(anglePts[i]))))
+
+    cARZ=[]
+    pARZ=[]
+    nARZ=[]
+    #Combine
+    for i in range(0,len(angle)):
+        cARZ.append([angle[i],r[i],z[i]])
+        pARZ.append([angle[i]-2*3.1415926,r[i],z[i]])
+        nARZ.append([angle[i]+2*3.1415926,r[i],z[i]])
+    wARZ=pARZ+cARZ+nARZ
+    wARZ.append([4*3.1415926,wARZ[0][1],wARZ[0][2]])
+
+    t=range(len(wARZ))
+    ipl_t=np.linspace(0,len(wARZ)-1,3*numPTS+1)
+    a_tup=si.splrep(t,[row[0] for row in wARZ], k=degree, per=0)
+    a_list=list(a_tup)
+    a_i=si.splev(ipl_t,a_list)
+    r_i=pchip([row[0] for row in wARZ],[row[1] for row in wARZ])(a_i)
+    z_i=pchip([row[0] for row in wARZ],[row[2] for row in wARZ])(a_i)
+    
+    #Trim 
+    oo=[]
+    for i in range(0, numPTS+1):
+        oo.append([a_i[i+numPTS],r_i[i+numPTS],z_i[i+numPTS]])
+    ARZ=[]
+    for i in range(sID*numPTS/len(points),eID*numPTS/len(points)+1):
+        ARZ.append(oo[i])
+
+    xDir=planarPts[0]/np.linalg.norm(planarPts[0])
+    yDir=np.cross(normalDir,xDir)
+    
+    XYZ=[]
+    for i in range(0, len(ARZ)):
+        xyz=np.multiply(np.cos(ARZ[i][0])*ARZ[i][1],xDir)+np.multiply(np.sin(ARZ[i][0])*ARZ[i][1],yDir)+np.multiply(ARZ[i][2],axisDir)+center
+        XYZ.append(xyz)
+    return XYZ
+
+def reGenLine(preLine,targetLine,segLength,numPTS):
+    if targetLine==[]:
+        return []
+    segLine=calLLen(targetLine)
+    if preLine!=[]:
+        preSegLine=calLLen(preLine)
+        num=len(preLine)
+    else:
+        num=numPTS+1
+    if preLine==[] and segLength==[]:
+        segLength=segLine[-1]/numPTS
+        add=1
+    else:
+        add=0
+
+    postLine=[]
+    for i in range(0,num):
+        if preLine!=[]:
+            oo=preSegLine[i]
+        else:
+            oo=i*segLength
+        for j in range(1,len(segLine)):
+            p1=segLine[j-1]
+            p2=segLine[j]
+            if p1<=oo and p2>oo:
+                ooo=(oo-p1)/(p2-p1)
+                Pt=np.array(targetLine[j-1])+(np.array(targetLine[j])-np.array(targetLine[j-1]))*ooo
+                postLine.append(Pt)
+                break
+    if add==1:
+        if len(postLine)==numPTS+1:
+            postLine.pop()
+        postLine.append(targetLine[-1])
+    return postLine
+
+def calLLen(line):
+    segLine=[]
+    segLine.append(0)
+    for i in range(1,len(line)):
+        segLine.append(segLine[i-1]+np.linalg.norm(np.array(line[i])-np.array(line[i-1])))
+    return segLine
+
+def trimLine(contour,origin,zAxis,numPTS):
+
+    ID=0
+    for i in range(0,len(contour)-1):
+        p1=np.array(contour[i])-np.array(origin)
+        p2=np.array(contour[i+1])-np.array(origin)
+        oo1=np.dot(p1,zAxis)
+        oo2=np.dot(p2,zAxis)
+        if np.sign(oo1)!=np.sign(oo2):
+            Pt=(p2-p1)*np.abs(oo1)/(np.abs(oo1)+np.abs(oo2))+p1+np.array(origin)
+            ID=i
+            break
+    if ID==0:
+        return contour
+    else:
+        line=list(contour[0:ID+1])
+        line.append(Pt)
+    
+    segLine=calLLen(line)
+    outLine=reGenLine([],line,[],numPTS)
+    return outLine
+
 def itpl(PTS,numPTS,degree,sID,eID):
     t=range(len(PTS))
     ipl_t=np.linspace(sID,eID,numPTS*(eID-sID)/(len(PTS)-1)+1)
@@ -170,7 +305,7 @@ def loadContour(imageName, regionalColor, info):
                     colorIndex=colorMatrix[colorID[k]][1]
                     if colorMatrix[colorID[k]][0] == 'RED' and np.absolute(fig[i][j][0]-fig[i][j][1]) > 50 and np.absolute(fig[i][j][0]-fig[i][j][2]) > 50:
                         colorPixels[k].append([i,j])
-                    if colorMatrix[colorID[k]][0] != 'RED' and np.absolute(fig[i][j][0]-(255*colorIndex[0])) < 20 and np.absolute(fig[i][j][1]-(255*colorIndex[1])) < 20 and np.absolute(fig[i][j][2]-int(255*colorIndex[2])) < 20:
+                    if colorMatrix[colorID[k]][0] != 'RED' and np.absolute(fig[i][j][0]-(255*colorIndex[0])) < 30 and np.absolute(fig[i][j][1]-(255*colorIndex[1])) < 30 and np.absolute(fig[i][j][2]-int(255*colorIndex[2])) < 30:
                         colorPixels[k].append([i,j])
         return colorPixels
     else:
@@ -230,7 +365,6 @@ def extractLongContours(i, info):
     ch3Cyan = digitize3D(ch3Pixels[4], info[3])
     ch3Yellow = digitize3D(ch3Pixels[7], info[3])
     ch3Olive = digitize3D(ch3Pixels[8], info[3])
-
     ch3Left = longContour(startPt(ch3Blue),
                                 ch3PtsVen, 'ch3B', i, 100, 8)
     print '----------ch3Left'
@@ -285,8 +419,10 @@ with open(fileName, 'rb') as information:
 
 # Information
 print 'Long Axis'
+'''
 frameNum = int(raw_input('Total number of frames: '))
 bSliceID = int(raw_input('   The bottom Slice ID: '))
+'''
 frameNum = 40
 bSliceID = 10
 
@@ -304,3 +440,57 @@ if np.dot(verticalDir, np.cross(rDir, cDir)) > 0:
     axisDir = np.cross(rDir, cDir)
 else:
     axisDir = -1*np.cross(rDir, cDir)
+
+posteriorInfo = []
+anteriorInfo = []
+for id in range(0, frameNum):
+    print 'ID: {}'.format(id)
+    ooLong = extractLongContours(id, info)
+    ch2Left = ooLong[0][0]
+    ch2Right = ooLong[0][1]
+    ch3Left = ooLong[0][2]
+    ch3Right = ooLong[0][3]
+    ch4Left = ooLong[0][4]
+    ch4Right = ooLong[0][5]
+    ch3Anterior = ooLong[0][6]
+    ch3Posterior = ooLong[0][7]
+    joint = ooLong[1][1]
+
+    ch2Left = trimLine(ch2Left, lowSliceOrigin, axisDir, 100)
+    ch2Right = trimLine(ch2Right, lowSliceOrigin, axisDir, 100)
+    ch3Left = trimLine(ch3Left, lowSliceOrigin, axisDir, 100)
+    ch3Right = trimLine(ch3Right, lowSliceOrigin, axisDir, 100)
+    ch4Left = trimLine(ch4Left, lowSliceOrigin, axisDir, 100)
+    ch4Right = trimLine(ch4Right, lowSliceOrigin, axisDir, 100)
+
+    figure = plt.figure()
+    ax = figure.gca(projection='3d')
+
+    p1 = ch2Right[0]
+    p2 = ch3Right[0]
+    p3 = ch4Right[0]
+    p4 = ch2Left[0]
+    p5 = ch3Left[0]
+    p6 = ch4Left[0]
+    venPTS = [p2, p3, p4, p5, p6, p1]
+    topCenter = (np.array(ch2Left[0])+np.array(ch4Left[0]))*0.5
+    ax.plot([row[0] for row in venPTS], [row[1] for row in venPTS],
+            [row[2] for row in venPTS], 'bo')
+    venRing = shortAxis(venPTS, topCenter, 1, 100, 0,
+                              len(venPTS), axisDir)
+
+    ax.plot([row[0] for row in venRing], [row[1] for row in venRing],
+            [row[2] for row in venRing], '-b')
+    ax.plot([row[0] for row in ch2Left], [row[1] for row in ch2Left],
+            [row[2] for row in ch2Left], '-r')
+    ax.plot([row[0] for row in ch2Right], [row[1] for row in ch2Right],
+            [row[2] for row in ch2Right], '-xr')
+    ax.plot([row[0] for row in ch3Left], [row[1] for row in ch3Left],
+            [row[2] for row in ch3Left], '-g')
+    ax.plot([row[0] for row in ch3Right], [row[1] for row in ch3Right],
+            [row[2] for row in ch3Right], '-xg')
+    ax.plot([row[0] for row in ch4Left], [row[1] for row in ch4Left],
+            [row[2] for row in ch4Left], '-b')
+    ax.plot([row[0] for row in ch4Right], [row[1] for row in ch4Right],
+            [row[2] for row in ch4Right], '-xb')
+    plt.show()
